@@ -1,99 +1,48 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-    <meta charset="UTF-8">
-    <title>现代化页面 - 仓库管理与日报生成</title>
-    <!-- 引入 Element Plus 样式 -->
-    <link
-    rel="stylesheet"
-    href="//cdn.jsdelivr.net/npm/element-plus/dist/index.css"
-  />
-    <!-- 引入 Vue 和 Element Plus 脚本 -->
-    <script src="https://unpkg.com/vue@3.5.13/dist/vue.global.prod.js"></script>
-    <script src="https://unpkg.com/element-plus/dist/index.full.min.js"></script>
+	<meta charset="UTF-8" />
+	<title>日报生成</title>
 </head>
+
 <body>
-    <div id="app">
-        <!-- 仓库列表 -->
-        <el-table :data="repositories" style="width: 100%; margin-top: 20px;" border>
-            <el-table-column prop="name" label="仓库名称" width="200"></el-table-column>
-            <el-table-column prop="url" label="仓库地址"></el-table-column>
-        </el-table>
+	<div id="app" v-cloak>
 
-        <!-- 添加仓库按钮 -->
-        <el-button type="primary" @click="openAddDialog" style="margin-top: 20px;">添加仓库</el-button>
+		{{target_date}}
 
-        <!-- 添加仓库对话框 -->
-        <el-dialog v-model="dialogVisible" title="添加仓库" width="30%">
-            <el-form :model="newRepository" label-width="100px">
-                <el-form-item label="仓库名称">
-                    <el-input v-model="newRepository.name" placeholder="请输入仓库名称"></el-input>
-                </el-form-item>
-                <el-form-item label="仓库地址">
-                    <el-input v-model="newRepository.url" placeholder="请输入仓库地址"></el-input>
-                </el-form-item>
-            </el-form>
-            <template #footer>
-                <span class="dialog-footer">
-                    <el-button @click="dialogVisible = false">取消</el-button>
-                    <el-button type="primary" @click="addRepository">确认</el-button>
-                </span>
-            </template>
-        </el-dialog>
+		<input v-model="target_date" type="date" />
 
-        <!-- 生成日报 -->
-        <div style="margin-top: 20px;">
-            <el-select v-model="selectedRepo" placeholder="选择仓库" style="width: 200px; margin-right: 10px;">
-                <el-option v-for="repo in repositories" :key="repo.name" :label="repo.name" :value="repo.name"></el-option>
-            </el-select>
-            <el-date-picker v-model="selectedDate" type="date" placeholder="选择日期" style="width: 200px;"></el-date-picker>
-            <el-button type="success" @click="generateReport" style="margin-left: 10px;">生成日报</el-button>
-        </div>
-    </div>
+		<button @click="generateDialy">生成日报</button>
+	</div>
 
-    <script>
-        const { createApp, ref } = Vue;
+	<script type="module">
+		import {
+			createApp,
+			ref,
+		} from "https://unpkg.com/vue@3/dist/vue.esm-browser.js";
 
-        createApp({
-            setup() {
-                const repositories = ref([]);
-                const dialogVisible = ref(false);
-                const newRepository = ref({ name: '', url: '' });
-                const selectedRepo = ref('');
-                const selectedDate = ref('');
+		createApp({
+			setup() {
 
-                const openAddDialog = () => {
-                    dialogVisible.value = true;
-                };
+				const target_date = ref('')
 
-                const addRepository = () => {
-                    if (newRepository.value.name && newRepository.value.url) {
-                        repositories.value.push({ ...newRepository.value });
-                        newRepository.value = { name: '', url: '' };
-                        dialogVisible.value = false;
-                    }
-                };
+				const generateDialy = () => {
+					fetch(`/daily?date=${target_date.value}`, {
+						method: "GET",
+						headers: {
+							"Content-Type": "application/json",
+						},
+					})
+				}
 
-                const generateReport = () => {
-                    if (!selectedRepo.value || !selectedDate.value) {
-                        alert('请选择仓库和日期');
-                        return;
-                    }
-                    alert(`生成日报 - 仓库: ${selectedRepo.value}, 日期: ${selectedDate.value}`);
-                };
-
-                return {
-                    repositories,
-                    dialogVisible,
-                    newRepository,
-                    selectedRepo,
-                    selectedDate,
-                    openAddDialog,
-                    addRepository,
-                    generateReport,
-                };
-            },
-        }).use(ElementPlus).mount('#app');
-    </script>
+				return {
+					generateDialy,
+					target_date
+				};
+			},
+		}).mount("#app");
+	</script>
 </body>
+
 </html>
