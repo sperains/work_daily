@@ -5,16 +5,17 @@ from git import Repo
 from dotenv import load_dotenv
 import logging
 from fastapi.staticfiles import StaticFiles
-from report import generate_report
+from sqlmodel import select
+from report import generate_report, get_repos_from_db
 from scheduler import init_scheduler, stop_scheduler
-
-import db
+from db import SessionDep, create_db_and_tables
+from db.models import Report
 
 load_dotenv()
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    db.create_db_and_tables()
+    create_db_and_tables()
     init_scheduler()
     yield
     stop_scheduler()
@@ -60,9 +61,14 @@ def generate_daily_report_job():
 
 @app.get("/daily")
 async def generate_daily_report(date: str = None):
-    print(date)
     generate_report(date)
     return {"message": "日报生成成功"}
+
+
+@app.get("/list")
+async def list_repos(session: SessionDep):
+    list = session.exec(select(Report).order_by(Report.date.desc())).all()
+    return list
 
 
 app.mount("/", StaticFiles(directory="static"), name="static")

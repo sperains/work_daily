@@ -8,7 +8,12 @@ from typing import List
 from git import Repo
 from pytz import timezone
 
+from sqlmodel import Session, select
+from db.models import Report, GitRepo
+from typing import Optional
+
 from deepseek import call_deepseek_api
+import db
 
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "reports")  # 存储月度报告的目录
 
@@ -69,10 +74,9 @@ def generate_work_report(commits: List[dict]) -> str:
     prompt = f"""
     你是一位资深技术主管，请根据以下 Git 提交记录生成一份专业的工作日报：
     要求：
-    1. 按项目分类总结工作内容
-    2. 识别技术难点和解决方案
-    3. 不需要明日工作计划
-    4. 不适用markdown, 以易于阅读的格式输出
+    1. 总结工作内容
+    2. 不需要明日工作计划
+    3. 不使用markdown, 以易于阅读的格式输出
     今日提交记录：
     {commit_log}
     """
@@ -85,62 +89,74 @@ def generate_work_report(commits: List[dict]) -> str:
 
 
 def save_report(_content: str, report_date: str = None):
+    """保存报告到文件和数据库"""
     tz = timezone("Asia/Shanghai")
     now = datetime.now(tz) if not report_date else datetime.strptime(report_date, "%Y-%m-%d").replace(tzinfo=tz)
-    year_month_dir = now.strftime("%Y-%m")
+    date_str = now.strftime("%Y-%m-%d")
+    
     output_dir = Path(OUTPUT_DIR)
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    report_file = output_dir / f"{year_month_dir}.txt"
+    report_file = output_dir / f"{report_date}.txt"
     
-    # 读取现有内容
-    with open(report_file, "a+", encoding="utf-8") as f:
-        f.seek(0)
-        content_lines = f.readlines()
+    try:
+        # 确保内容完整写入文件
+        with open(report_file, "w", encoding="utf-8") as f:
+            f.write(_content)  # 改为使用 write 而不是 writelines
+        
+        logging.info(f"报告已保存到文件: {report_file}")
+    except Exception as e:
+        logging.error(f"保存报告到文件失败: {str(e)}")
+        raise
     
-    # 分割内容为日期块
-    date_blocks = []
-    current_block = []
-    for line in content_lines:
-        if line.startswith("## "):
-            if current_block:  # 保存前一个块
-                date_blocks.append(current_block)
-            current_block = [line]  # 开始新块
-        else:
-            current_block.append(line)
-    if current_block:  # 添加最后一个块
-        date_blocks.append(current_block)
-    
-    # 准备新内容块
-    new_block = [f"## {now.strftime("%Y-%m-%d")}\n\n", _content + "\n\n"]
-    
-    # 按日期排序插入新块
-    inserted = False
-    for i, block in enumerate(date_blocks):
-        if block[0].startswith("## "):
-            block_date_str = block[0][3:].strip()
-            try:
-                # Make both datetimes timezone-aware for comparison
-                block_date = datetime.strptime(block_date_str, "%Y-%m-%d").replace(tzinfo=tz)
-                if now > block_date:
-                    date_blocks.insert(i, new_block)
-                    inserted = True
-                    break
-            except ValueError:
-                pass
-    
-    if not inserted:
-        date_blocks.append(new_block)
-    
-    # 重新组合内容
-    new_content = []
-    
-    for block in date_blocks:
-        new_content.extend(block)
-    
-    # 写入文件
-    with open(report_file, "w", encoding="utf-8") as f:
-        f.writelines(new_content)
+    # 保存到数据库
+    try:
+        with Session(db.engine) as session:
+            # 检查是否已存在相同日期的报告
+            statement = select(Report).where(Report.date == date_str)
+            existing_report = session.exec(statement).first()
+            
+            if existing_report:
+                existing_report.content = _content
+                session.add(existing_report)
+            else:
+                new_report = Report(
+                    date=date_str, 
+                    content=_content,  # 确保完整内容被保存
+                    username="任OvO"
+                )
+                session.add(new_report)
+            
+            session.commit()
+    except Exception as e:
+        logging.error(f"保存报告到数据库失败: {str(e)}")
+        raise
+
+def get_repos_from_db() -> List[str]:
+    """从数据库获取仓库路径列表"""
+    try:
+        with Session(db.engine) as session:
+            statement = select(GitRepo)
+            repos = session.exec(statement).all()
+            return [repo.repo_url for repo in repos]
+    except Exception as e:
+        logging.error(f"从数据库获取仓库列表失败: {str(e)}")
+        return []
+
+def generate_report(target_date: Optional[str] = None):
+    """生成工作报告"""
+    try:
+        repos = get_repos_from_db()
+        if not repos:
+            logging.warning("未配置任何Git仓库路径，使用默认路径")
+            repos = ["/Users/sperains/jd/jd_word"]
+        
+        result = get_git_commits(repos, target_date=target_date) if target_date else get_git_commits(repos, days=1)
+        content = generate_work_report(result)
+        save_report(content, report_date=target_date)
+    except Exception as e:
+        logging.error(f"生成报告失败: {str(e)}")
+        raise
 
 
 def is_valid_git_repo(repo_path: str) -> bool:

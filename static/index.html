@@ -14,6 +14,13 @@
 		<input v-model="target_date" type="date" />
 
 		<button @click="generateDialy">生成日报</button>
+
+
+		<ul>
+			<li v-for="(item, index) in report_list" :key="index">
+				<pre>{{item.content}}</pre>
+			</li>
+		</ul>
 	</div>
 
 	<script type="module">
@@ -33,12 +40,30 @@
 						headers: {
 							"Content-Type": "application/json",
 						},
+					}).then((res) => res.json()).then((res) => {
+						getReportList()
 					})
 				}
 
+				const report_list = ref([])
+
+				const getReportList = () => {
+					fetch(`/list`, {
+						method: "GET",
+						headers: {
+							"Content-Type": "application/json",
+						},
+					}).then((res) => res.json()).then((res) => {
+						report_list.value = res
+					})
+				}
+
+				getReportList()
+
 				return {
 					generateDialy,
-					target_date
+					target_date,
+					report_list
 				};
 			},
 		}).mount("#app");
