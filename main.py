@@ -7,6 +7,8 @@ from dotenv import load_dotenv
 import logging
 from fastapi.staticfiles import StaticFiles
 from sqlmodel import select
+
+import api.user_repo
 from report import generate_report, get_repos_from_db
 from scheduler import init_scheduler, stop_scheduler
 from db import SessionDep, create_db_and_tables
@@ -60,20 +62,24 @@ def generate_daily_report_job():
         return
 
 
-@app.get("/daily")
-async def generate_daily_report(date: str ):
-    # date为空默认今天
-    if not date:
-        date = datetime.now().strftime("%Y-%m-%d")
-    
-    generate_report(date)
-    return {"message": "日报生成成功"}
+app.include_router(api.user_repo.router)
 
 
-@app.get("/list")
-async def list_repos(session: SessionDep):
-    _list = session.exec(select(Report).order_by(Report.date.desc())).all()
-    return _list
+# @app.get("/daily")
+# async def generate_daily_report(date: str ):
+#     # date为空默认今天
+#     if not date:
+#         date = datetime.now().strftime("%Y-%m-%d")
+#
+#     generate_report(date)
+#     return {"message": "日报生成成功"}
+#
+#
+# @app.get("/list")
+# async def list_repos(session: SessionDep):
+#     _list = session.exec(select(Report).order_by(Report.date.desc())).all()
+#     return _list
 
 
 app.mount("/", StaticFiles(directory="static"), name="static")
+
