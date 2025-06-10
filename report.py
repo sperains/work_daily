@@ -15,7 +15,6 @@ from typing import Optional
 from deepseek import call_deepseek_api
 import db
 
-OUTPUT_DIR = os.getenv("OUTPUT_DIR", "reports")  # 存储月度报告的目录
 
 # 设置日志记录
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -94,20 +93,6 @@ def save_report(_content: str, report_date: str = None):
     now = datetime.now(tz) if not report_date else datetime.strptime(report_date, "%Y-%m-%d").replace(tzinfo=tz)
     date_str = now.strftime("%Y-%m-%d")
     
-    output_dir = Path(OUTPUT_DIR)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    
-    report_file = output_dir / f"{report_date}.txt"
-    
-    try:
-        # 确保内容完整写入文件
-        with open(report_file, "w", encoding="utf-8") as f:
-            f.write(_content)  # 改为使用 write 而不是 writelines
-        
-        logging.info(f"报告已保存到文件: {report_file}")
-    except Exception as e:
-        logging.error(f"保存报告到文件失败: {str(e)}")
-        raise
     
     # 保存到数据库
     try:
@@ -144,12 +129,13 @@ def get_repos_from_db() -> List[str]:
         return []
 
 def generate_report(target_date: Optional[str] = None):
+    
     """生成工作报告"""
     try:
         repos = get_repos_from_db()
         if not repos:
             logging.warning("未配置任何Git仓库路径，使用默认路径")
-            repos = ["/Users/sperains/jd/jd_word"]
+            repos = [os.getenv("REPO_DIR")]
         
         result = get_git_commits(repos, target_date=target_date) if target_date else get_git_commits(repos, days=1)
         content = generate_work_report(result)
@@ -165,7 +151,10 @@ def is_valid_git_repo(repo_path: str) -> bool:
 
 
 def generate_report(target_date: str = None  ):
-    repos = ["/Users/sperains/jd/jd_word"]  # List of repository paths
+
+    repo_url = os.getenv('REPO_DIR')
+    
+    repos = [repo_url]  # List of repository paths
     
     result = get_git_commits(repos, target_date=target_date) if target_date else get_git_commits(repos, days=1)
     content = generate_work_report(result)
