@@ -5,7 +5,7 @@ from fastapi import Depends
 from sqlmodel import SQLModel, Session, create_engine
 
 
-sqlite_file_name = "database.db"
+sqlite_file_name = "db/database.db"
 sqlite_url = f"sqlite:///{sqlite_file_name}"
 
 

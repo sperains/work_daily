@@ -1,82 +1,40 @@
-from datetime import datetime
-import os
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
-from git import Repo
-from dotenv import load_dotenv
 import logging
+from fastapi import FastAPI
+from dotenv import load_dotenv
 from fastapi.staticfiles import StaticFiles
-from sqlmodel import select
+from sqlmodel import Session, select
 
 import api.user_repo
-from scheduler import init_scheduler, stop_scheduler
 from db import create_db_and_tables
+import db
+from db.models import UserRepo
+from utils.repo_utils import clone_repos
 
 load_dotenv()
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI):
+async def lifespan(app: FastAPI):
     create_db_and_tables()
-    init_scheduler()
+    
+    # 项目启动时自动下载仓库
+    with Session(db.engine) as session:
+        # 获取所有仓库并去重
+        repos = session.exec(select(UserRepo)).all()
+        if repos:
+            # 使用字典去重，以repo_url为key
+            unique_repos = {repo.repo_url: repo for repo in repos}
+            repo_urls = list(unique_repos.keys())
+            
+            clone_repos(repo_urls)
+            logging.info(f"已自动下载 {len(repo_urls)} 个仓库（去重后）")
+    
     yield
-    stop_scheduler()
-
 
 app = FastAPI(lifespan=lifespan)
 
 
-def clone_github_repo(repo_url: str, local_path: str) -> bool:
-    """从GitHub克隆仓库到本地"""
-    try:
-        if not os.path.exists(local_path):
-            Repo.clone_from(repo_url, local_path)
-            logging.info(f"成功克隆仓库 {repo_url} 到 {local_path}")
-            return True
-        logging.info(f"本地仓库已存在: {local_path}")
-        return True
-    except Exception as e:
-        logging.error(f"克隆仓库失败: {e}")
-        return False
-
-
-def generate_daily_report_job():
-    """生成日报任务，支持本地和远程GitHub仓库"""
-    repos = []
-    # 本地仓库检查
-    local_repo = "jd_word"
-    if os.path.exists(local_repo):
-        repos.append(local_repo)
-
-    # 远程GitHub仓库处理
-    github_repo_url = os.getenv("GITHUB_REPO_URL")
-    if github_repo_url:
-        repo_name = github_repo_url.split('/')[-1].replace('.git', '')
-        local_path = os.path.join(os.getcwd(), repo_name)
-        if clone_github_repo(github_repo_url, local_path):
-            repos.append(local_path)
-
-    if not repos:
-        logging.warning("没有可用的仓库路径")
-        return
-
-
 app.include_router(api.user_repo.router)
-
-
-# @app.get("/daily")
-# async def generate_daily_report(date: str ):
-#     # date为空默认今天
-#     if not date:
-#         date = datetime.now().strftime("%Y-%m-%d")
-#
-#     generate_report(date)
-#     return {"message": "日报生成成功"}
-#
-#
-# @app.get("/list")
-# async def list_repos(session: SessionDep):
-#     _list = session.exec(select(Report).order_by(Report.date.desc())).all()
-#     return _list
 
 
 app.mount("/", StaticFiles(directory="static"), name="static")

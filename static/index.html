@@ -9,11 +9,51 @@
 <body>
 	<div id="app" v-cloak>
 
-		{{target_date}}
 
-		<input v-model="target_date" type="date" />
+		<div style="display: flex; align-items: center; gap: 20px">
+			{{user_id}}
+			<select v-model="user_id" style="width: 120px;height: 24.5px ">
+				<option v-for="(item, index) in user_list" :key="index" :value="item.id">{{item.username}}</option>
+			</select>
 
-		<button @click="generateDialy">生成日报</button>
+			<input v-model="target_date" type="date" />
+
+			<button @click="generateDialy">生成日报</button>
+
+			<button @click="downloadRepos">下载仓库</button>
+
+			<button @click="show_prompt =! show_prompt"> {{!show_prompt ? '查看': '隐藏'}}prompt</button>
+
+			<button @click="handleUserRepoAdd">添加仓库信息</button>
+		</div>
+
+		<div v-if="show_form" style="display: flex; flex-direction: column">
+
+			<div>
+				<label for="username">git用户名</label><input v-model="form.username" id="username" type="text">
+			</div>
+
+			<div>
+				<label for="repo_url">git仓库地址</label><input v-model="form.repo_url" id="repo_url" type="text">
+			</div>
+
+			<div>
+				<label for="branch">分支名</label><input v-model="form.branch" id="branch" type="text">
+			</div>
+
+			<div>
+				<button @click="submitUserRepo">保存</button>
+			</div>
+
+		</div>
+
+		<div style="margin-top: 16px" v-if="prompt && show_prompt">
+			<textarea v-model="prompt"
+				style="width: 800px; height: 200px;font-size: 14px; font-family: monospace; border: 1px solid #ccc; padding: 10px; box-sizing: border-box;">
+			</textarea>
+			<button @click="updatePrompt">更新prompt</button>
+		</div>
+
 
 
 		<ul>
@@ -27,28 +67,57 @@
 		import {
 			createApp,
 			ref,
+			watch,
 		} from "./js/vue.esm-browser.min.js";
 
 		createApp({
 			setup() {
 
 				const target_date = ref('')
+				const report_list = ref([])
+				const user_list = ref([])
+				const user_id = ref()
+
+				const prompt = ref('')
+				const show_prompt = ref(false)
+				const show_form = ref(false)
+
+				const form = ref({
+					username: '',
+					repo_url: '',
+					branch: ''
+				})
 
 				const generateDialy = () => {
-					fetch(`/daily?date=${target_date.value}`, {
-						method: "GET",
+					fetch(`/api/daily`, {
+						method: "POST",
+						body: JSON.stringify({
+							date: target_date.value,
+							user_id: user_id.value,
+						}),
 						headers: {
 							"Content-Type": "application/json",
 						},
 					}).then((res) => res.json()).then((res) => {
-						getReportList()
+						if (res.detail) {
+							alert(JSON.stringify(res.detail))
+							return
+						}
+						getReportList(user_id.value)
+					}).catch((err) => {
+						console.error(err)
 					})
 				}
 
-				const report_list = ref([])
+				const getUserList = () => {
+					fetch(`/api/users`).then((res) => res.json()).then((res) => {
+						user_list.value = res
+					})
+				}
 
-				const getReportList = () => {
-					fetch(`/list`, {
+
+				const getReportList = (user_id) => {
+					fetch(`/api/reports?user_id=${user_id}`, {
 						method: "GET",
 						headers: {
 							"Content-Type": "application/json",
@@ -58,12 +127,84 @@
 					})
 				}
 
-				getReportList()
+				watch(user_id, (newUserId) => {
+					if (newUserId) {
+						getReportList(newUserId)
+					}
+				})
+
+				const downloadRepos = () => {
+					fetch(`/api/download-repos`, {
+						method: "POST",
+					}).then(res => res.json()).then(res => {
+						console.log(res)
+					})
+				}
+
+				const getPrompt = () => {
+					fetch(`/api/prompt`).then(res => res.json()).then(res => {
+						console.log(res)
+						prompt.value = res.prompt
+					}).catch(err => {
+						console.error(err)
+					})
+				}
+
+				const updatePrompt = () => {
+					fetch('/api/prompt-update', {
+						method: 'POST',
+						body: JSON.stringify({
+							prompt: prompt.value
+						}),
+						headers: {
+							"Content-Type": "application/json",
+						},
+					}).then(res => res.json()).then(res => {
+						if (res.detail) {
+							alert(JSON.stringify(res.detail))
+							return
+						}
+					}).catch(err => {
+						console.error(err)
+					})
+				}
+
+				const handleUserRepoAdd = () => {
+					show_form.value = true
+				}
+
+				const submitUserRepo = () => {
+					fetch('/api/user-repo', {
+						method: 'POST',
+						body: JSON.stringify(form.value),
+						headers: {
+							"Content-Type": "application/json",
+						},
+					}).then(res => res.json()).then(res => {
+						console.log(res)
+					})
+				}
+
+
+
+				getUserList()
+				getPrompt()
 
 				return {
 					generateDialy,
 					target_date,
-					report_list
+					report_list,
+					user_list,
+					user_id,
+					downloadRepos,
+					prompt,
+					getPrompt,
+					show_prompt,
+					updatePrompt,
+					show_form,
+					handleUserRepoAdd,
+					submitUserRepo,
+					form
 				};
 			},
 		}).mount("#app");
