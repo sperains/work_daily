@@ -9,10 +9,8 @@ from fastapi.staticfiles import StaticFiles
 from sqlmodel import select
 
 import api.user_repo
-from report import generate_report, get_repos_from_db
 from scheduler import init_scheduler, stop_scheduler
-from db import SessionDep, create_db_and_tables
-from db.models import Report
+from db import create_db_and_tables
 
 load_dotenv()
 
