@@ -19,7 +19,9 @@ def get_users(session: SessionDep) -> list[User]:
 @router.get("/reports")
 def get_reports(session: SessionDep) -> list[Report]:
     username = os.getenv("GIT_USERNAME", "").strip()
-    return session.exec(select(Report).where(Report.username == username)).all()
+    return session.exec(
+        select(Report).where(Report.username == username).order_by(Report.date.desc())
+    ).all()
 
 
 @router.post("/user-repo")
