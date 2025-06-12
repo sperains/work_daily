@@ -32,8 +32,8 @@ def get_git_commits(username: str, target_date: str = None) -> List[dict]:
         since_date = datetime.strptime(target_date, "%Y-%m-%d").replace(tzinfo=tz)
         until_date = since_date + timedelta(days=1)
     else:
-        since_date = datetime.now(tz) - timedelta(1)
-        until_date = datetime.now(tz)
+        since_date = datetime.now(tz)
+        until_date = datetime.now(tz) + timedelta(1)
 
     all_commits = []
     for repo_path in user_repos:
