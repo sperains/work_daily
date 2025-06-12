@@ -11,20 +11,13 @@
 
 
 		<div style="display: flex; align-items: center; gap: 20px">
-			{{user_id}}
-			<select v-model="user_id" style="width: 120px;height: 24.5px ">
-				<option v-for="(item, index) in user_list" :key="index" :value="item.id">{{item.username}}</option>
-			</select>
 
 			<input v-model="target_date" type="date" />
 
 			<button @click="generateDialy">生成日报</button>
 
-			<button @click="downloadRepos">下载仓库</button>
-
 			<button @click="show_prompt =! show_prompt"> {{!show_prompt ? '查看': '隐藏'}}prompt</button>
 
-			<button @click="handleUserRepoAdd">添加仓库信息</button>
 		</div>
 
 		<div v-if="show_form" style="display: flex; flex-direction: column">
@@ -58,6 +51,7 @@
 
 		<ul>
 			<li v-for="(item, index) in report_list" :key="index">
+				{{item.date}}
 				<pre>{{item.content}}</pre>
 			</li>
 		</ul>
@@ -93,7 +87,6 @@
 						method: "POST",
 						body: JSON.stringify({
 							date: target_date.value,
-							user_id: user_id.value,
 						}),
 						headers: {
 							"Content-Type": "application/json",
@@ -103,7 +96,7 @@
 							alert(JSON.stringify(res.detail))
 							return
 						}
-						getReportList(user_id.value)
+						getReportList()
 					}).catch((err) => {
 						console.error(err)
 					})
@@ -116,8 +109,8 @@
 				}
 
 
-				const getReportList = (user_id) => {
-					fetch(`/api/reports?user_id=${user_id}`, {
+				const getReportList = () => {
+					fetch(`/api/reports`, {
 						method: "GET",
 						headers: {
 							"Content-Type": "application/json",
@@ -127,11 +120,7 @@
 					})
 				}
 
-				watch(user_id, (newUserId) => {
-					if (newUserId) {
-						getReportList(newUserId)
-					}
-				})
+				getReportList()
 
 				const downloadRepos = () => {
 					fetch(`/api/download-repos`, {

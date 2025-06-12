@@ -9,20 +9,24 @@ from git import Repo
 from pytz import timezone
 
 from sqlmodel import Session, select
-from db.models import Report, UserRepo
+from db.models import Report
 
 from deepseek import call_deepseek_api
 import db
-from utils.repo_utils import get_repo_local_path
 
 
 # 设置日志记录
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
 
-def get_git_commits(username: str, session: db.SessionDep, target_date: str = None) -> List[dict]:
-    user_repos = session.exec(select(UserRepo).where(UserRepo.username == username)).all()
-    
+def get_git_commits(username: str, target_date: str = None) -> List[dict]:
+    user_repos = os.getenv("USER_REPOS", "").split(",")
+    if not user_repos or user_repos == [""]:
+        logging.error("未配置 USER_REPOS 环境变量，请检查")
+        return []
+
     tz = timezone("Asia/Shanghai")
     if target_date:
         since_date = datetime.strptime(target_date, "%Y-%m-%d").replace(tzinfo=tz)
@@ -30,43 +34,35 @@ def get_git_commits(username: str, session: db.SessionDep, target_date: str = No
     else:
         since_date = datetime.now(tz) - timedelta(1)
         until_date = datetime.now(tz)
-    
+
     all_commits = []
-    for repo in user_repos:
-        repo_path = get_repo_local_path(repo.repo_url)
+    for repo_path in user_repos:
+        repo_path = repo_path.strip()
         if not is_valid_git_repo(repo_path):
+            logging.error(f"仓库 {repo_path} 不是有效的 Git 仓库")
             continue
-            
-        repo_obj = Repo(path=repo_path)
-        
-        # 先执行pull操作
+
         try:
-            repo_obj.git.pull()
-            logging.info(f"已拉取最新代码: {repo.repo_url}")
+            repo_obj = Repo(path=repo_path)
+            for commit in repo_obj.iter_commits(since=since_date, until=until_date):
+                if commit.author.name != username.strip():
+                    continue
+                all_commits.append(
+                    {
+                        "hash": commit.hexsha[:7],
+                        "author": commit.author.name,
+                        "date": commit.committed_datetime.astimezone(tz).strftime(
+                            "%Y-%m-%d %H:%M"
+                        ),
+                        "message": commit.message.strip(),
+                        "branch": repo_obj.active_branch.name,
+                        "repo": os.path.basename(repo_path),
+                    }
+                )
         except Exception as e:
-            logging.error(f"拉取代码失败: {e}")
+            logging.error(f"处理仓库 {repo_path} 时出错: {str(e)}")
             continue
-            
-        # 切换到指定分支
-        if repo.branch:
-            try:
-                repo_obj.git.checkout(repo.branch)
-                logging.info(f"已切换到分支: {repo.branch}")
-            except Exception as e:
-                logging.error(f"切换分支失败: {e}")
-                continue
-                
-        for commit in repo_obj.iter_commits(since=since_date, until=until_date):
-            if commit.author.name != username.strip():
-                continue
-            all_commits.append({
-                "hash": commit.hexsha[:7],
-                "author": commit.author.name,
-                "date": commit.committed_datetime.astimezone(tz).strftime("%Y-%m-%d %H:%M"),
-                "message": commit.message.strip(),
-                "repo": os.path.basename(repo_path),
-                "branch": repo.branch or "master"
-            })
+
     return all_commits
 
 
@@ -76,13 +72,15 @@ def generate_work_report(commits: List[dict]) -> str:
         logging.info("无代码提交记录")
         return "无代码提交记录"
     # 构建 Commit 信息字符串
-    commit_log = "\n".join([
-        f"- [{c['hash']}] {c['message']} ({c['author']} @ {c['date']}) [{c['repo']}]"
-        for c in commits
-    ])
+    commit_log = "\n".join(
+        [
+            f"- [{c['hash']}] {c['message']} ({c['author']} @ {c['date']}) [{c['repo']}]"
+            for c in commits
+        ]
+    )
 
     print(commit_log, end="")
-    
+
     # 读取本地prompt.txt文件
     prompt_file_path = Path(__file__).parent / "prompt.txt"
     if not prompt_file_path.exists():
@@ -105,32 +103,39 @@ def generate_work_report(commits: List[dict]) -> str:
     return report_content
 
 
-def save_report(_content: str, username: str, commit_log: str = None ,report_date: str = None):
+def save_report(
+    _content: str, username: str, commit_log: str = None, report_date: str = None
+):
     """保存报告到文件和数据库"""
     tz = timezone("Asia/Shanghai")
-    now = datetime.now(tz) if not report_date else datetime.strptime(report_date, "%Y-%m-%d").replace(tzinfo=tz)
+    now = (
+        datetime.now(tz)
+        if not report_date
+        else datetime.strptime(report_date, "%Y-%m-%d").replace(tzinfo=tz)
+    )
     date_str = now.strftime("%Y-%m-%d")
-    
-    
+
     # 保存到数据库
     try:
         with Session(db.engine) as session:
             # 检查是否已存在相同日期的报告
-            statement = select(Report).where(Report.date == date_str, Report.username==username)
+            statement = select(Report).where(
+                Report.date == date_str, Report.username == username
+            )
             existing_report = session.exec(statement).first()
-            
+
             if existing_report:
                 existing_report.content = _content
                 session.add(existing_report)
             else:
                 new_report = Report(
-                    date=date_str, 
+                    date=date_str,
                     content=_content,  # 确保完整内容被保存
                     username=username,
-                    commit_log=commit_log  # 假设 commit_log 也是内容的一部分
+                    commit_log=commit_log,  # 假设 commit_log 也是内容的一部分
                 )
                 session.add(new_report)
-            
+
             session.commit()
     except Exception as e:
         logging.error(f"保存报告到数据库失败: {str(e)}")
@@ -142,9 +147,19 @@ def is_valid_git_repo(repo_path: str) -> bool:
     return Path(repo_path).is_dir() and (Path(repo_path) / ".git").is_dir()
 
 
-def generate_report(username: str, session: db.SessionDep, target_date: str = None,):
-    result = get_git_commits(username=username, session=session, target_date=target_date)
+def generate_report(
+    target_date: str = None,
+):
+    username = os.getenv("GIT_USERNAME", "").strip()
+    if not username:
+        logging.error("未配置 GIT_USERNAME 环境变量，请检查")
+        return
+    result = get_git_commits(username=username, target_date=target_date)
     content = generate_work_report(result)
-    
-    commit_log = "\n".join([f"{c['hash']} {c['message']}" for c in result]) if result else ''
-    save_report(content, username=username, commit_log= commit_log, report_date=target_date)
+
+    commit_log = (
+        "\n".join([f"{c['hash']} {c['message']}" for c in result]) if result else ""
+    )
+    save_report(
+        content, username=username, commit_log=commit_log, report_date=target_date
+    )
